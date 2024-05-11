@@ -1,5 +1,4 @@
 import numpy as np
-import onnxruntime
 import clip
 from PIL import Image
 from clip_onnx import clip_onnx, attention
@@ -38,3 +37,14 @@ class CLIP:
         norm_text_features = text_features / np.linalg.norm(text_features, ord=2, 
                                                             axis=1, keepdims=True)
         return norm_text_features
+    
+    def cossim(self, prompts_emb: np.ndarray, images_emb: np.ndarray) -> np.ndarray:
+        logit_scale = self.onnx_model.logit_scale.detach().cpu().numpy()
+        logits_per_image = logit_scale * images_emb @ prompts_emb.T
+        probs = self.softmax(logits_per_image)
+        return probs
+
+    @staticmethod
+    def softmax(logits: np.ndarray) -> np.ndarray:
+        exp_logits = np.exp(logits)
+        return exp_logits / np.sum(exp_logits, axis=0, keepdims=True)
