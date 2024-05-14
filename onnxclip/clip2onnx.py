@@ -3,15 +3,12 @@ import onnx
 from torch import nn
 from onnxruntime.quantization import quantize_dynamic, QuantType
 import open_clip
-from textual_util import TextualWrapper
+from .textual_util import TextualWrapper
+from .utils import DEFAULT_EXPORT
 
-DEFAULT_EXPORT = torch.onnx.ExportOptions(dynamic_shapes=False)
 
 class CLIPConverter:
-    def __init__(self, model_name: str, pretrained: str) -> None:
-        self.load_torch_model(model_name, pretrained)
-
-    def load_torch_model(self, model_name: str, pretrained: str) -> None:
+    def load_torch_model(self, model_name: str, pretrained: str) -> tuple[nn.Module]:
         self.model_name = model_name
         self.pretrained = pretrained
         model, _, self.preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
@@ -20,8 +17,9 @@ class CLIPConverter:
         # model components
         self.tokenizer = open_clip.get_tokenizer(model_name)
         self.exp_logit_scale = model.logit_scale.exp().item()
-        self.visual = model.visual
-        self.textual = TextualWrapper(model)
+        visual = model.visual
+        textual = TextualWrapper(model)
+        return visual, textual
     
     def onnx_export_visual(self, out_path: str, export_params: dict = DEFAULT_EXPORT) -> onnx.ModelProto:
         dummy_input = torch.ones((1, 3, *self.image_size), dtype=torch.float32)
@@ -31,7 +29,8 @@ class CLIPConverter:
 
     def onnx_export_textual(self, out_path: str, export_params: dict = DEFAULT_EXPORT) -> onnx.ModelProto:
         dummy_input = torch.ones((1, 77), dtype=torch.int32)
-        textual_proto = self.onnx_export(self.textual, dummy_input, out_path, export_params)
+        textual_proto = self.onnx_export(
+            self.textual, dummy_input, out_path, export_params)
         return textual_proto
 
     @staticmethod

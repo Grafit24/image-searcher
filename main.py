@@ -2,7 +2,7 @@ import os
 import numpy as np
 from argparse import ArgumentParser
 from PIL import Image
-from CLIP import CLIP
+from onnxclip import ONNXCLIP
 from glob import glob
 from typing import Optional
 
@@ -18,7 +18,7 @@ def main(dir_path: str,
     if not isinstance(prompt, str):
         raise TypeError
     
-    model = CLIP()
+    model = ONNXCLIP()
     prompt_emb = model.get_prompt_emb(prompt)
     
     images_paths = glob(os.path.join(dir_path, "*.png"))
