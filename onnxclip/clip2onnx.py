@@ -4,7 +4,7 @@ from torch import nn
 from onnxruntime.quantization import quantize_dynamic, QuantType
 import open_clip
 from .textual_util import TextualWrapper
-from .utils import DEFAULT_EXPORT
+from .config import DEFAULT_EXPORT, BATCH_SIZE
 
 
 class CLIPConverter:
@@ -22,7 +22,7 @@ class CLIPConverter:
         return visual, textual
     
     def onnx_export_visual(self, out_path: str, export_params: dict = DEFAULT_EXPORT) -> onnx.ModelProto:
-        dummy_input = torch.ones((1, 3, *self.image_size), dtype=torch.float32)
+        dummy_input = torch.ones((BATCH_SIZE, 3, *self.image_size), dtype=torch.float32)
         visual_proto = self.onnx_export(
             self.visual, dummy_input, out_path, export_params)
         return visual_proto

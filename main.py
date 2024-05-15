@@ -5,6 +5,7 @@ from PIL import Image
 from onnxclip import ONNXCLIP
 from glob import glob
 from typing import Optional
+from onnxclip import BATCH_SIZE
 
 
 def main(dir_path: str, 
@@ -23,12 +24,16 @@ def main(dir_path: str,
     
     images_paths = glob(os.path.join(dir_path, "*.png"))
     images_emb = []
-    for image_path in images_paths:
+    bacth_images = []
+    for idx, image_path in enumerate(images_paths, start=1):
         image = Image.open(image_path)
-        image_emb = model.get_image_emb(image)
-        images_emb.append(image_emb)
+        bacth_images.append(image)
+        if idx % BATCH_SIZE == 0 or len(images_paths) == idx:
+            batch_emb = model.get_image_emb(bacth_images)
+            images_emb.append(batch_emb)
+            bacth_images = []
 
-    if len(image_emb) == 0:
+    if len(images_emb) == 0:
         raise Exception("No images .png found")
     
     images_emb = np.concatenate(images_emb, axis=0)

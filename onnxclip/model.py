@@ -1,9 +1,11 @@
 import os
 import numpy as np
+import torch
 from PIL.Image import Image as PILImage
 import onnxruntime
 from .clip2onnx import CLIPConverter
-from .utils import get_weight_path, DEFAULT_EXPORT
+from .utils import get_weight_path
+from .config import DEFAULT_EXPORT
 
 
 class ONNXCLIP(CLIPConverter):
@@ -34,11 +36,12 @@ class ONNXCLIP(CLIPConverter):
         output, *_ = self.textual_session.run(None, {arg_name: x})
         return output
 
-    def get_image_emb(self, image: PILImage) -> np.ndarray:
-        image = self.preprocess(image).unsqueeze(0).cpu()
-        image_onnx = image.detach().cpu().numpy().astype(np.float32)
-        image_features = self.encode_image(image_onnx)
-        norm_image_features = image_features / np.linalg.norm(image_features, ord=2, 
+    def get_image_emb(self, images: list[PILImage]) -> np.ndarray:
+        images = torch.cat(
+            [self.preprocess(image).unsqueeze(0) for image in images], dim=0).cpu()
+        images_onnx = images.detach().cpu().numpy().astype(np.float32)
+        images_features = self.encode_image(images_onnx)
+        norm_image_features = images_features / np.linalg.norm(images_features, ord=2, 
                                                               axis=1, keepdims=True)
         return norm_image_features
 

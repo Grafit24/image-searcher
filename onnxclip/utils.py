@@ -1,8 +1,4 @@
 import os
-from torch.onnx import ExportOptions
-
-
-DEFAULT_EXPORT = ExportOptions(dynamic_shapes=False)
 
 
 def get_clip_dir() -> str:
