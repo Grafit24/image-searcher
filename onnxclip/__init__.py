@@ -1,2 +1,2 @@
 from .model import ONNXCLIP
-from .config import BATCH_SIZE
+from .config import IMAGES_BATCH_SIZE
