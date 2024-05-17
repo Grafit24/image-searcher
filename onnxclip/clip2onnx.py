@@ -1,3 +1,6 @@
+import os
+import sys
+from typing import Optional
 import torch
 import onnx
 from torch import nn
@@ -5,6 +8,20 @@ from onnxruntime.quantization import quantize_dynamic, QuantType
 import open_clip
 from .textual_util import TextualWrapper
 from .config import DEFAULT_EXPORT, IMAGES_BATCH_SIZE
+
+module_paths = [
+    os.path.abspath(os.path.join('..', 'logger_config.py')),
+    os.path.abspath(os.path.join('..', 'logger_utils.py'))
+]
+for module_path in module_paths:
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+
+from logger_config import EXPORT_LOGGING_LEVEL, LOGS_PATH
+from logger_utils import log_execution_time, get_logger
+
+
+logger = get_logger(f"{__name__}:export", EXPORT_LOGGING_LEVEL, LOGS_PATH)
 
 
 class CLIPConverter:
@@ -21,12 +38,14 @@ class CLIPConverter:
         textual = TextualWrapper(model)
         return visual, textual
     
+    @log_execution_time(logger, "Export visual onnx")
     def onnx_export_visual(self, out_path: str, export_params: dict = DEFAULT_EXPORT) -> onnx.ModelProto:
         dummy_input = torch.ones((IMAGES_BATCH_SIZE, 3, *self.image_size), dtype=torch.float32)
         visual_proto = self.onnx_export(
             self.visual, dummy_input, out_path, export_params)
         return visual_proto
 
+    @log_execution_time(logger, "Export textual onnx")
     def onnx_export_textual(self, out_path: str, export_params: dict = DEFAULT_EXPORT) -> onnx.ModelProto:
         dummy_input = torch.ones((1, 77), dtype=torch.int32)
         textual_proto = self.onnx_export(

@@ -9,6 +9,11 @@ from pyexiv2 import ImageData
 from PIL import Image
 from PIL.Image import Image as PILImage
 from onnxclip import ONNXCLIP
+from logger_utils import log_execution_time, get_logger
+from logger_config import INFERENCE_LOGGING_LEVEL, LOGS_PATH
+
+
+logger = get_logger(f"{__name__}:inference", INFERENCE_LOGGING_LEVEL, LOGS_PATH)
 
 
 class CacheProcessing:
@@ -42,6 +47,7 @@ class CacheProcessing:
         np.save(arr=embeddings, file=os.path.join(self.cache_dir, f"{name}.npy"))
         self.index[fp] = os.path.join(self.cache_dir, fn)
 
+    @log_execution_time(logger, "Processed images")
     def process(self, model: ONNXCLIP):
         images_embbedings = []
         for image_path in self.files_paths:
@@ -75,6 +81,7 @@ class CacheProcessing:
         return unqiue_name
 
 
+@log_execution_time(logger, "The main module was executed")
 def main(dir_path: str, 
          prompt: str, 
          k: Optional[int] = None,
@@ -115,7 +122,4 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--threshold", type=float, default=0)
     parser.add_argument("-j", "--json", action='store_true')
     args = parser.parse_args()
-    import time
-    cur = time.time()
     main(args.dir.strip(), args.prompt.strip(), args.k, args.threshold, args.json)
-    print("Executed in %s seconds" % (time.time() - cur))

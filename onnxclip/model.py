@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 import torch
 from PIL.Image import Image as PILImage
@@ -7,8 +8,23 @@ from .clip2onnx import CLIPConverter
 from .utils import get_weight_path
 from .config import DEFAULT_EXPORT
 
+module_paths = [
+    os.path.abspath(os.path.join('..', 'logger_config.py')),
+    os.path.abspath(os.path.join('..', 'logger_utils.py'))
+]
+for module_path in module_paths:
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+
+from logger_config import LOAD_MODEL_LOGGING_LEVEL, LOGS_PATH
+from logger_utils import log_execution_time, get_logger
+
+
+logger = get_logger(f"{__name__}:load", LOAD_MODEL_LOGGING_LEVEL, LOGS_PATH)
+
 
 class ONNXCLIP(CLIPConverter):
+    @log_execution_time(logger, "[CLIP ONNX] Initialization")
     def __init__(self, model_name: str = "ViT-B-32", pretrained: str = "laion2b_s34b_b79k") -> None:
         self.visual, self.textual = self.load_torch_model(model_name, pretrained)
         visual_weight_path = get_weight_path(model_name, pretrained, "visual")
