@@ -1,11 +1,15 @@
 import os
 import sys
+import json
+from open_clip import get_tokenizer
+from open_clip.transform import image_transform_v2, PreprocessCfg
 import numpy as np
 import torch
 from PIL.Image import Image as PILImage
 import onnxruntime
+from functools import cached_property
 from .clip2onnx import CLIPConverter
-from .utils import get_weight_path
+from .utils import get_weight_path, get_config_path
 from .config import DEFAULT_EXPORT
 
 module_paths = [
@@ -25,22 +29,49 @@ logger = get_logger(f"{__name__}:load", LOAD_MODEL_LOGGING_LEVEL, LOGS_PATH)
 
 class ONNXCLIP(CLIPConverter):
     @log_execution_time(logger, "[CLIP ONNX] Initialization")
-    def __init__(self, model_name: str = "ViT-B-32", pretrained: str = "laion2b_s34b_b79k") -> None:
-        self.visual, self.textual = self.load_torch_model(model_name, pretrained)
-        visual_weight_path = get_weight_path(model_name, pretrained, "visual")
-        textual_weight_path = get_weight_path(model_name, pretrained, "textual")
-        self.textual_session = None
-        self.visual_session = None
-        if not os.path.exists(visual_weight_path) or not os.path.exists(textual_weight_path):
+    def __init__(self, 
+                 model_name: str = "ViT-B-32", 
+                 pretrained: str = "laion2b_s34b_b79k", 
+                 providers: tuple[str] = tuple(['CPUExecutionProvider'])
+                 ) -> None:
+        self.model_name = model_name
+        self.pretrained = pretrained
+        self.providers = providers
+        self.load_model(self.model_name, self.pretrained)
+
+    def load_model(self, model_name: str, pretrained: str) -> None:
+        self.visual_weight_path = get_weight_path(model_name, pretrained, "visual")
+        self.textual_weight_path = get_weight_path(model_name, pretrained, "textual")
+        config_path = get_config_path(model_name, pretrained)
+        if not os.path.exists(self.visual_weight_path) or \
+                not os.path.exists(self.textual_weight_path) or \
+                not os.path.exists(config_path):
+            self.visual, self.textual = self.load_torch_model(model_name, pretrained)
             self.onnx_export_visual(
-                visual_weight_path, export_params=DEFAULT_EXPORT)
+                self.visual_weight_path, export_params=DEFAULT_EXPORT)
             self.onnx_export_textual(
-                textual_weight_path, export_params=DEFAULT_EXPORT)
-        self.start_session(visual_weight_path, textual_weight_path)
+                self.textual_weight_path, export_params=DEFAULT_EXPORT)
+            self.export_config(config_path)
+        else:
+            with open(config_path) as f:
+                cfg = json.load(f)
+            assert cfg["model_name"] == self.model_name and \
+                 cfg["pretrained"] == self.pretrained
+            self.exp_logit_scale = cfg["exp_logit_scale"]
+            self.image_size = cfg["preprocess_cfg"]["size"]
+            preprocess_cfg = PreprocessCfg(**cfg["preprocess_cfg"])
+            self.preprocess = image_transform_v2(preprocess_cfg, False)
+            self.tokenizer = get_tokenizer(self.model_name)
     
-    def start_session(self, visual_path: str, textual_path: str, providers: tuple[str] = tuple(['CPUExecutionProvider'])) -> None:
-        self.visual_session = onnxruntime.InferenceSession(visual_path, providers=providers)
-        self.textual_session = onnxruntime.InferenceSession(textual_path, providers=providers)
+    @cached_property
+    def visual_session(self) -> None:
+        return onnxruntime.InferenceSession(
+            self.visual_weight_path, providers=self.providers)
+
+    @cached_property
+    def textual_session(self):
+        return onnxruntime.InferenceSession(
+            self.textual_weight_path, providers=self.providers)
     
     def encode_image(self, x: np.ndarray) -> np.ndarray:
         arg_name = self.visual_session.get_inputs()[0].name
@@ -52,6 +83,7 @@ class ONNXCLIP(CLIPConverter):
         output, *_ = self.textual_session.run(None, {arg_name: x})
         return output
 
+    @log_execution_time(logger, "Inference of image")
     def get_image_emb(self, images: list[PILImage]) -> np.ndarray:
         images = torch.cat(
             [self.preprocess(image).unsqueeze(0) for image in images], dim=0).cpu()
@@ -61,6 +93,7 @@ class ONNXCLIP(CLIPConverter):
                                                               axis=1, keepdims=True)
         return norm_image_features
 
+    @log_execution_time(logger, "Inference of text")
     def get_prompt_emb(self, prompt: str) -> np.ndarray:
         text = self.tokenizer(prompt).cpu()
         text_onnx = text.detach().cpu().numpy().astype(np.int32)

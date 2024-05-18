@@ -3,3 +3,4 @@ cache
 *.onnx
 __pycache__
 *.logs
+*.json

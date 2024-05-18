@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Optional
+import json
 import torch
 import onnx
 from torch import nn
@@ -28,7 +28,8 @@ class CLIPConverter:
     def load_torch_model(self, model_name: str, pretrained: str) -> tuple[nn.Module]:
         self.model_name = model_name
         self.pretrained = pretrained
-        model, _, self.preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+        model, _, self.preprocess = open_clip.create_model_and_transforms(
+            model_name, pretrained=pretrained)
         model.eval()
         self.image_size = model.visual.image_size
         # model components
@@ -37,6 +38,17 @@ class CLIPConverter:
         visual = model.visual
         textual = TextualWrapper(model)
         return visual, textual
+    
+    @log_execution_time(logger, "Export config")
+    def export_config(self, out_path: str) -> None:
+        cfg = dict(
+            model_name=self.model_name,
+            pretrained=self.pretrained,
+            exp_logit_scale=self.exp_logit_scale,
+            preprocess_cfg=self.visual.preprocess_cfg
+        )
+        with open(out_path, "w") as f:
+            json.dump(cfg, f)
     
     @log_execution_time(logger, "Export visual onnx")
     def onnx_export_visual(self, out_path: str, export_params: dict = DEFAULT_EXPORT) -> onnx.ModelProto:
