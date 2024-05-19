@@ -8,6 +8,7 @@ from onnxruntime.quantization import quantize_dynamic, QuantType
 import open_clip
 from .textual_util import TextualWrapper
 from .config import DEFAULT_EXPORT, IMAGES_BATCH_SIZE
+from .utils import insert_quant_to_path
 
 module_paths = [
     os.path.abspath(os.path.join('..', 'logger_config.py')),
@@ -82,3 +83,12 @@ class CLIPConverter:
             onnx_program.save(out_model_path)
             onnx.checker.check_model(onnx_program.model_proto)
         return onnx_program.model_proto
+    
+    @staticmethod
+    def onnx_dynamic_quantization(model_path: str, overwrite: bool = False) -> str:
+        quant_model_path = insert_quant_to_path(model_path)
+        if not os.path.exists(quant_model_path) or overwrite:
+            quantize_dynamic(model_path,
+                            quant_model_path,
+                            weight_type=QuantType.QUInt8)
+        return quant_model_path

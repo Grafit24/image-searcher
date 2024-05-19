@@ -9,7 +9,7 @@ from PIL.Image import Image as PILImage
 import onnxruntime
 from functools import cached_property
 from .clip2onnx import CLIPConverter
-from .utils import get_weight_path, get_config_path
+from .utils import get_weight_path, get_config_path, insert_quant_to_path
 from .config import DEFAULT_EXPORT
 
 module_paths = [
@@ -32,14 +32,20 @@ class ONNXCLIP(CLIPConverter):
     def __init__(self, 
                  model_name: str = "ViT-B-32", 
                  pretrained: str = "laion2b_s34b_b79k", 
-                 providers: tuple[str] = tuple(['CPUExecutionProvider'])
+                 providers: tuple[str] = tuple(['CPUExecutionProvider']),
+                 quantized: bool = False
                  ) -> None:
         self.model_name = model_name
         self.pretrained = pretrained
         self.providers = providers
-        self.load_model(self.model_name, self.pretrained)
+        self.quantized = quantized
+        self.load_model(self.model_name, self.pretrained, quantized=quantized)
 
-    def load_model(self, model_name: str, pretrained: str) -> None:
+    def load_model(self, 
+                   model_name: str, 
+                   pretrained: str, 
+                   quantized: bool = False
+                   ) -> None:
         self.visual_weight_path = get_weight_path(model_name, pretrained, "visual")
         self.textual_weight_path = get_weight_path(model_name, pretrained, "textual")
         config_path = get_config_path(model_name, pretrained)
@@ -62,6 +68,13 @@ class ONNXCLIP(CLIPConverter):
             preprocess_cfg = PreprocessCfg(**cfg["preprocess_cfg"])
             self.preprocess = image_transform_v2(preprocess_cfg, False)
             self.tokenizer = get_tokenizer(self.model_name)
+        
+        if quantized:
+            self.visual_weight_path = self.onnx_dynamic_quantization(
+                model_path=self.visual_weight_path, overwrite=False)
+            self.textual_weight_path = self.onnx_dynamic_quantization(
+                model_path=self.textual_weight_path, overwrite=False)
+            logger.debug("[CLIP ONNX] Loading qunatized model")
     
     @cached_property
     def visual_session(self) -> None:
@@ -83,7 +96,7 @@ class ONNXCLIP(CLIPConverter):
         output, *_ = self.textual_session.run(None, {arg_name: x})
         return output
 
-    @log_execution_time(logger, "Inference of image")
+    @log_execution_time(logger, "[CLIP ONNX] Inference of image")
     def get_image_emb(self, images: list[PILImage]) -> np.ndarray:
         images = torch.cat(
             [self.preprocess(image).unsqueeze(0) for image in images], dim=0).cpu()
@@ -93,7 +106,7 @@ class ONNXCLIP(CLIPConverter):
                                                               axis=1, keepdims=True)
         return norm_image_features
 
-    @log_execution_time(logger, "Inference of text")
+    @log_execution_time(logger, "[CLIP ONNX] Inference of text")
     def get_prompt_emb(self, prompt: str) -> np.ndarray:
         text = self.tokenizer(prompt).cpu()
         text_onnx = text.detach().cpu().numpy().astype(np.int32)

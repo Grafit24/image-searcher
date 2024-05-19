@@ -33,7 +33,7 @@ class CacheProcessing:
                 with open(self.index_fp, 'w') as f:
                     json.dump({}, f)
             
-            with open(self.index_fp ) as f:
+            with open(self.index_fp) as f:
                 self.index = json.load(f)
 
     def decode_cache(self, fp: str) -> np.ndarray | None:
@@ -51,19 +51,21 @@ class CacheProcessing:
     def process(self, model: ONNXCLIP):
         images_embbedings = []
         for image_path in self.files_paths:
-            img_emb = self.decode_cache(image_path)
+            img_emb = self.decode_cache(image_path) if self.use_cache else None
             if img_emb is not None:
                 images_embbedings.append(img_emb)
             else:
                 image = Image.open(image_path)
                 img_emb = model.get_image_emb([image])
-                self.encode_cache(image_path, img_emb)
+                if self.use_cache:
+                    self.encode_cache(image_path, img_emb)
                 images_embbedings.append(img_emb)
 
         if len(images_embbedings) == 0:
             raise Exception("No images .png found")
         
-        self.save_index()
+        if self.use_cache:
+            self.save_index()
         
         images_embbedings = np.concatenate(images_embbedings, axis=0)
         return images_embbedings
@@ -86,18 +88,20 @@ def main(dir_path: str,
          prompt: str, 
          k: Optional[int] = None,
          threshold: float = 0,
-         need_json: bool = False
+         need_json: bool = False,
+         use_cache: bool = True,
+         qunatized: bool = True
         ) -> None:
     if not os.path.exists(dir_path):
         raise FileNotFoundError
     if not isinstance(prompt, str):
         raise TypeError
     
-    model = ONNXCLIP()
+    model = ONNXCLIP(quantized=qunatized)
     prompt_emb = model.get_prompt_emb(prompt)
     
     files_paths = glob(os.path.join(dir_path, "*.png"))
-    cache_processing = CacheProcessing(files_paths, use_cache=True)
+    cache_processing = CacheProcessing(files_paths, use_cache=use_cache)
     images_emb = cache_processing.process(model)
 
     probs = model.cossim(prompt_emb, images_emb)
@@ -106,10 +110,9 @@ def main(dir_path: str,
     result = list(reversed(sorted(result, key=lambda x: x[1])))
     result = result[:k] if k is not None else result
     if need_json:
-        # os.system('cls')
+        os.system('cls')
         print([path for path, _ in result])
     else:
-        # os.system('cls')
         for path, score in result:
             print(f"{path} : {score}")
 
@@ -121,5 +124,13 @@ if __name__ == "__main__":
     parser.add_argument("-k", type=int, default=None)
     parser.add_argument("-t", "--threshold", type=float, default=0)
     parser.add_argument("-j", "--json", action='store_true')
+    parser.add_argument("--no-cache", action='store_false')
+    parser.add_argument("-nq", "--no-quantized", action='store_false')
     args = parser.parse_args()
-    main(args.dir.strip(), args.prompt.strip(), args.k, args.threshold, args.json)
+    main(dir_path=args.dir.strip(), 
+         prompt=args.prompt.strip(), 
+         k=args.k, 
+         threshold=args.threshold, 
+         need_json=args.json, 
+         use_cache=args.no_cache, 
+         qunatized=args.no_quantized)

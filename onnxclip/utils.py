@@ -26,3 +26,8 @@ def get_config_path(model_name: str, pretrained: str) -> str:
             .lower().replace("-", "_")
     config_path = os.path.join(weights_dir, config_fn)
     return config_path
+
+
+def insert_quant_to_path(path: str) -> str:
+    name, ext = os.path.splitext(path)
+    return f"{name}.quant{ext}"
